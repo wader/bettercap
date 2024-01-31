@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bettercap/bettercap/pcapgo"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcapgo"
 
 	"github.com/evilsocket/islazy/data"
 	"github.com/evilsocket/islazy/fs"
@@ -235,13 +235,15 @@ func (w *WiFi) SaveHandshakesTo(fileName string, linkType layers.LinkType) error
 	}
 	defer fp.Close()
 
-	writer := pcapgo.NewWriter(fp)
-
-	if doHead {
-		if err = writer.WriteFileHeader(65536, linkType); err != nil {
-			return err
-		}
+	opts := pcapgo.DefaultNgWriterOptions
+	opts.SkipHeader = !doHead
+	inf := pcapgo.DefaultNgInterface
+	inf.LinkType = linkType
+	writer, err := pcapgo.NewNgWriterInterface(fp, inf, opts)
+	if err != nil {
+		return err
 	}
+	defer writer.Flush()
 
 	w.RLock()
 	defer w.RUnlock()
@@ -252,8 +254,10 @@ func (w *WiFi) SaveHandshakesTo(fileName string, linkType layers.LinkType) error
 			if station.Handshake.Any() {
 				err = nil
 				station.Handshake.EachUnsavedPacket(func(pkt gopacket.Packet) {
+					c := pkt.Metadata().CaptureInfo
+					c.InterfaceIndex = 0
 					if err == nil {
-						err = writer.WritePacket(pkt.Metadata().CaptureInfo, pkt.Data())
+						err = writer.WritePacket(c, pkt.Data())
 					}
 				})
 				if err != nil {
